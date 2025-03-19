@@ -109,6 +109,8 @@ Printf proc
     xor r15, r15
 
 .readInputData:
+
+
         
     call Switch
 
@@ -178,6 +180,9 @@ Switch proc
     mov r12, BINARY_MASK
     mov r13, BIN_SHIFT
 
+    mov rax, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
+
     call ConverterSysMltplsTwo
 
     jmp .preTurnOver
@@ -196,6 +201,9 @@ Switch proc
 
 .decimal:
 
+    mov rax, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
+
     call ConvertDecimal
 
     jmp .preTurnOver
@@ -204,6 +212,9 @@ Switch proc
 
     mov r12, HEX_MASK
     mov r13, HEX_SHIFT
+
+    mov rax, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
 
     call ConvertHexadecimal
 
@@ -214,11 +225,17 @@ Switch proc
     mov r12, OCTAL_MASK
     mov r13, OCT_SHIFT
 
+    mov rax, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
+
     call ConvertOctal
 
     jmp .preTurnOver
 
 .string:
+
+    mov rsi, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
 
     call PutString
 
@@ -264,8 +281,6 @@ Switch proc
 
     pop rdi
 
-    
-
     ret
 
 Switch endp
@@ -288,6 +303,7 @@ Switch endp
 ;===============================================================================================;
 
 ConverterSysMltplsTwo proc
+
     xor r14, r14
 
     push rdi
@@ -324,7 +340,7 @@ ConverterSysMltplsTwo endp
 ;Entry:     RAX - numbet                            Put user`s decimal num
 ;           RDI - address in buffer                      into buffer
 ;Retrn:
-;Destr:     RAX, R15
+;Destr:     
 ;===============================================================================================
 
 ConvertDecimal proc
@@ -355,7 +371,7 @@ ConvertDecimal proc
 
     jne .loop
 
-    ;call PutInBuf
+    call PutInBuf
 
     ret
 
@@ -366,6 +382,47 @@ ConvertDecimal endp
 ;I=================================== END OF CONVERTATIONS ====================================I
 ;I                                      I              I                                       I
 ;I*********************************************************************************************I
+
+;===============================================================================================
+;-----------------------------------------------------------------------------------------------
+;                                                            PUT_IN_BUF
+;Entry:     RDI - address of buffer                 Put user`s string into buffer
+;           RSI - address of last char in 
+;                 intermadiate buffer
+;           
+;Retrn:     RAX - lenght of string
+;Destr:     RAX, RCX, RDI
+;===============================================================================================
+
+PutInBuf proc
+
+    push rdx
+    add rdx, r14
+
+    cmp rdx, BUFFER_SIZE
+
+    pop rdx
+
+    jb .start
+
+    call OutputBuffer
+
+.start:
+
+    mov rcx, r14
+
+.loop:
+
+    movsb
+    dec rsi
+    dec rsi
+
+    loop .loop
+
+    ret
+
+
+PutInBuf endp
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
