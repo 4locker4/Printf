@@ -1,38 +1,37 @@
-    .intel_syntex noprefix
-    
-    .global _start
+    global _start
+
 ;-----------------------------------------------------------------------------------------------
 
     section .data
 
-    BUFFER_SIZE     equ 128
-    BUFFER          db  BUFFER_SIZE dup (0)
+    BUFFER_SIZE      equ 128
+    BUFFER:          db  BUFFER_SIZE dup (0)
 
-    INTERMDT_BUF_SZ equ 64
-    INTERMDT_BUF    db  INTERMDT_BUF_SZ dup (0)
+    INTERMDT_BUF_SZ  equ 64
+    INTERMDT_BUF:    db  INTERMDT_BUF_SZ dup (0)
 
-    ENTRY           db  'Hello! I am %d years old'
+    ENTRY:           db  'Hello! I am %d years old'
 
-    VARGS_B         db  '%'
-    LEN_OF_ADDR_PTR equ 8
+    VARGS_B:         db  '%'
+    LEN_OF_ADDR_PTR: equ 8
 
-    BINARY_MASK     db  1
-    OCTAL_MASK      db  8
-    HEX_MASK        db  16
+    BINARY_MASK:     db  1
+    OCTAL_MASK:      db  8
+    HEX_MASK:        db  16
 
-    SWAP_BUF        db  8 Dup (8)
+    SWAP_BUF:        db  8 Dup (8)
 
-    ALPHABET        db  '0123456789ABCDEF'
+    ALPHABET:        db  '0123456789ABCDEF'
     
-    HEX_SHIFT       equ 4
-    OCT_SHIFT       equ 3
-    BIN_SHIFT       equ 1
+    HEX_SHIFT        equ 4
+    OCT_SHIFT        equ 3
+    BIN_SHIFT        equ 1
 
-    END_OF_STR      equ '\0'
+    END_OF_STR       equ '\0'
 
-    ERROR_MSG       db 'You put wrong char after %, end of program...'
+    ERROR_MSG:       db 'You put wrong char after %, end of program...'
 
-    MOV_TO_NEXT_VAR equ 8
+    MOV_TO_NEXT_VAR  equ 8
 
 ;-----------------------------------------------------------------------------------------------
 
@@ -41,13 +40,13 @@
 
 ;=========================================================== MACROS ============================
 
-%macro printInCmd bufAddr
+%macro printInCmd 1
 
     mov rax, 1
 
     mov rdi, 1
 
-    mov rsi, bufAddr
+    mov rsi, %1
 
     syscall
 
@@ -80,9 +79,9 @@ _start:
 ;vargs      ...
 ;
 ;INFO:      RDX - reserved to variable`s address
+;           RCX - reserved to count quantity of chars into intermediate buffer
 ;           RDI - reserved to buffer address
 ;           RSI - reserved to input data
-;           R14 - reserved to count quantity of chars into intermediate buffer
 ;           R15 - reserved to char`s counter
 ;           
 ;===============================================================================================
@@ -93,7 +92,7 @@ _start:
 ;
 ;2) Do we need to save all registers, without rax, rcx, rdx? 
 
-Printf proc
+Printf:
 
 ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     pop r12                     ; save ret address
@@ -109,8 +108,6 @@ Printf proc
     xor r15, r15
 
 .readInputData:
-
-
         
     call Switch
 
@@ -130,8 +127,6 @@ Printf proc
 
     ret
 
-Printf endp
-
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
 ;                                                           SWITCH
@@ -139,10 +134,10 @@ Printf endp
 ;           RDI - address in buffer             special symbols in user`s string
 ;           RDX - address of last var
 ;Retrn:    
-;Destr:
+;Destr:     RBX
 ;===============================================================================================
 
-Switch proc
+Switch:
 
     cmp byte [rsi], byte '%'
     jne .justLetter
@@ -151,8 +146,6 @@ Switch proc
 
     cmp byte [rsi], byte '%'
     je .justLetter
-
-    mov r15, rdi
 
     xor rbx, rbx
     mov bl, byte [rsi]
@@ -163,15 +156,15 @@ Switch proc
 
 ;===========================================================JMP TABLE START=====================
 .jmpTable:
-                            dq binary
-                            dq char
-                            dq decimal
-    times ('h' - 'd' - 1)   dq error
-                            dq hexadecimal,
-    times ('o' - 'h' - 1)   dq error
-                            dq octal,
-    times ('s' - 'o' - 1)   dq error
-                            dq string
+                            dq .binary
+                            dq .char
+                            dq .decimal
+    times ('h' - 'd' - 1)   dq .error
+                            dq .hexadecimal,
+    times ('o' - 'h' - 1)   dq .error
+                            dq .octal,
+    times ('s' - 'o' - 1)   dq .error
+                            dq .string
 
 ;===========================================================JMP TABLE END=======================
 
@@ -180,12 +173,9 @@ Switch proc
     mov r12, BINARY_MASK
     mov r13, BIN_SHIFT
 
-    mov rax, [rdx]
-    sub rdx, MOV_TO_NEXT_VAR
-
     call ConverterSysMltplsTwo
 
-    jmp .preTurnOver
+    jmp .funcRet
 
 .char:
 
@@ -194,57 +184,41 @@ Switch proc
     mov al, byte [rdx]
     stosb
 
-    sub rdx, MOV_TO_NEXT_VAR
-
-    push rdi
     jmp .funcRet
 
 .decimal:
 
-    mov rax, [rdx]
-    sub rdx, MOV_TO_NEXT_VAR
-
     call ConvertDecimal
 
-    jmp .preTurnOver
+    jmp .funcRet
 
 .hexadecimal:
 
     mov r12, HEX_MASK
     mov r13, HEX_SHIFT
 
-    mov rax, [rdx]
-    sub rdx, MOV_TO_NEXT_VAR
+    call ConverterSysMltplsTwo
 
-    call ConvertHexadecimal
-
-    jmp .preTurnOver
+    jmp .funcRet
 
 .octal:
     
     mov r12, OCTAL_MASK
     mov r13, OCT_SHIFT
 
-    mov rax, [rdx]
-    sub rdx, MOV_TO_NEXT_VAR
+    call ConverterSysMltplsTwo
 
-    call ConvertOctal
-
-    jmp .preTurnOver
+    jmp .funcRet
 
 .string:
 
-    mov rsi, [rdx]
-    sub rdx, MOV_TO_NEXT_VAR
-
     call PutString
 
-    push rdi
     jmp .funcRet
 
 .error:
 
-;//TD
+    ;;\td
 
 .justLetter:
 
@@ -254,36 +228,11 @@ Switch proc
     stosb
     inc rsi
 
-    push rdi
     jmp .funcRet
-
-.preTurnOver:
-
-    push rdi
-
-.turnOver:
-
-    cmp rdi, r15
-    jge .exit
-
-    mov al, byte [rdi]
-    mov ah, byte [r15]
-
-    mov byte [rdi], ah
-    mov byte [r15], al
-
-    inc r15
-    dec rdi
-
-    jmp .turnOver
 
 .funcRet:
 
-    pop rdi
-
     ret
-
-Switch endp
 
 ;I*********************************************************************************************I
 ;I                                       I             I                                       I
@@ -294,31 +243,35 @@ Switch endp
 ;===============================================================================================;
 ;-----------------------------------------------------------------------------------------------;
 ;                                                 CONVERTER_SYS_MLTPLS_TWO                      ;
-;Entry:     RAX - number                        Put user`s multyples two num                    ;
-;           RDI - address in buffer                     into buffer                             ;
-;           R12 - MASK                                                                          ;
+;Entry:     RDI - address in buffer             Put user`s multyples two num                    ;
+;           R12 - MASK                                 into buffer                              ;
 ;           R13 - SHIFT                                                                         ;
 ;Retrn:     none                                                                                ;
-;Destr:     RAX, RBX, RSI, R14                                                                  ;
+;Destr:     RAX, RBX, RSI, RCX                                                                  ;
 ;===============================================================================================;
 
-ConverterSysMltplsTwo proc
+ConverterSysMltplsTwo:
 
-    xor r14, r14
+    mov rax, [rdx]              ; put var in rax
+    sub rdx, MOV_TO_NEXT_VAR
 
-    push rdi
-    lea rdi, INTERMDT_BUF
+    push rsi                    ; save rsi
 
-    lea rbx, ALPHABET
+    xor rcx, rcx                ; reset to zero intermediate buffer counter
+
+    mov rsi, rdi                ; | > prepare for movsb & PutInBuf
+    lea rdi, INTERMDT_BUF       ; |/
+
+    lea rbx, ALPHABET           ; for shift
 
 .loop:
 
-    inc r14
+    inc rcx
 
     mov rsi, rax
 
-    and rsi, r12
-    shr rax, r13
+    and rsi, rcx
+    shr rax, cl
 
     add rsi, rbx
 
@@ -328,11 +281,12 @@ ConverterSysMltplsTwo proc
 
     jne .loop
 
-    ;call PutInBuf
+    call PutInBuf
+
+    mov rdi, rsi
+    pop rsi
 
     ret
-
-ConverterSysMltplsTwo endp   
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
@@ -343,29 +297,41 @@ ConverterSysMltplsTwo endp
 ;Destr:     
 ;===============================================================================================
 
-ConvertDecimal proc
+ConvertDecimal:
+    
+    mov rax, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
 
-    xor r14, r14
+    push rdx
 
-    push rdi
+    push rsi
+
+    xor rcx, rcx
+
+    mov rsi, rdi
     lea rdi, INTERMDT_BUF
+
+    mov r14, 10
 
     cmp rax, 0
 
     ja .loop
 
-    inc r14
+    inc rcx
 
     mov byte [rdi], byte '-'
     neg rax
 
 .loop:
 
-    inc r14
+    inc rcx
 
-    div 10
+    div r14
 
-    mov byte [rdi], '0' + r15
+    mov rbx, '0'
+    add rbx, rdx
+
+    mov byte [rdi], dl
 
     cmp rax, 0
 
@@ -373,9 +339,12 @@ ConvertDecimal proc
 
     call PutInBuf
 
-    ret
+    mov rdi, rsi
+    pop rsi
 
-ConvertDecimal endp
+    pop rdx
+
+    ret
 
 ;I*********************************************************************************************I
 ;I                                      I              I                                       I
@@ -390,26 +359,22 @@ ConvertDecimal endp
 ;           RSI - address of last char in 
 ;                 intermadiate buffer
 ;           
-;Retrn:     RAX - lenght of string
-;Destr:     RAX, RCX, RDI
+;Retrn:
+;Destr:     RCX
 ;===============================================================================================
 
-PutInBuf proc
+PutInBuf:
 
     push rdx
-    add rdx, r14
+    add rdx, rcx
 
     cmp rdx, BUFFER_SIZE
 
     pop rdx
 
-    jb .start
+    jb .loop
 
     call OutputBuffer
-
-.start:
-
-    mov rcx, r14
 
 .loop:
 
@@ -421,9 +386,6 @@ PutInBuf proc
 
     ret
 
-
-PutInBuf endp
-
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
 ;                                                              STRLEN
@@ -432,7 +394,9 @@ PutInBuf endp
 ;Destr:     RAX, RCX, RDI
 ;===============================================================================================
 
-Strlen proc
+Strlen:
+
+    mov rsi, [rdx]
 
     xor rcx, rcx
     dec rcx
@@ -450,29 +414,31 @@ Strlen proc
     mov rax, rcx
 
     ret
-Strlen endp
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
 ;                                                            PUT_STRING
-;Entry:     RDI - address in buffer                 Put user`s string into buffer
-;           RSI - address of input string           
+;Entry:     RSI - address of input strin            Put user`s string into buffer
+;                      
 ;Retrn:
 ;Destr:
 ;===============================================================================================
 
-PutString proc
+PutString:
 
-    push rdi
     push rsi
-    mov rdi, rsi
+
+    mov rdi, [rdx]
+    sub rdx, MOV_TO_NEXT_VAR
 
     call Strlen
 
     pop rsi
-    pop rdi
 
-    cmp rax, BUFFER_SIZE - r15
+    mov rbx, BUFFER_SIZE
+    sub rbx, r15
+
+    cmp rax, rbx
 
     jb .loop
 
@@ -482,13 +448,11 @@ PutString proc
 
     movsb
 
-    cmp byte [rsi], END_OF_STR
+    cmp byte [rsi], byte END_OF_STR
 
     jne .loop
 
     ret
-
-PutString endp
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
@@ -498,7 +462,7 @@ PutString endp
 ;Destr:     RAX, RSI, RDI
 ;===============================================================================================
 
-OutputBuffer proc
+OutputBuffer:
 
 ;=-=-=-=-= Macro -=-=-=-=
 ;DESTR: RSI, RDI, RAX
@@ -510,5 +474,3 @@ OutputBuffer proc
     mov r15, 0
 
     ret
-
-OutputBuffer endp
