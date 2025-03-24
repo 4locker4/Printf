@@ -1,76 +1,11 @@
-    global _start
-
-;-----------------------------------------------------------------------------------------------
-
-    section .data
-
-    BUFFER_SIZE      equ 128
-    BUFFER:          db  BUFFER_SIZE dup (0)
-
-    INTERMDT_BUF_SZ  equ 64
-    INTERMDT_BUF:    db  INTERMDT_BUF_SZ dup (0)
-
-    ENTRY:           db  'Hello! I am %d years old'
-
-    VARGS_B:         db  '%'
-    LEN_OF_ADDR_PTR: equ 8
-
-    BINARY_MASK:     db  1
-    OCTAL_MASK:      db  8
-    HEX_MASK:        db  16
-
-    SWAP_BUF:        db  8 Dup (8)
-
-    ALPHABET:        db  '0123456789ABCDEF'
-    
-    HEX_SHIFT        equ 4
-    OCT_SHIFT        equ 3
-    BIN_SHIFT        equ 1
-
-    END_OF_STR       equ '\0'
-
-    ERROR_MSG:       db 'You put wrong char after %, end of program...'
-
-    MOV_TO_NEXT_VAR  equ 8
-
-;-----------------------------------------------------------------------------------------------
+    global MyPrintf
 
 ;-----------------------------------------------------------------------------------------------
     section .text
 
 ;=========================================================== MACROS ============================
 
-%macro printInCmd 1
-
-    mov rax, 1
-
-    mov rdi, 1
-
-    mov rsi, %1
-
-    syscall
-
-%endmacro
-
 ;========================================================= START CODE ==========================
-
-_start:
-    push rax
-    push rcx
-    push rdx
-    push r11
-
-    call Printf
-
-    pop r11
-    pop rax
-    pop rcx
-    pop rdx
-
-    mov rax, 1
-    mov rbx, 0
-
-    int 0x80
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
@@ -84,24 +19,24 @@ _start:
 ;           RSI - reserved to input data
 ;           R15 - reserved to char`s counter
 ;           
+;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14, R15
 ;===============================================================================================
 
-;QUESTIONS?
-;
-;1) How we get address of user`s string?
-;
-;2) Do we need to save all registers, without rax, rcx, rdx? 
-
-Printf:
+MyPrintf:
 
 ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     pop r12                     ; save ret address
 
-    pop rsi                     ; get user`s text address
+    push r9
+    push r8
+    push rcx
+    push rdx
+    push rsi
+
+    mov rsi, rdi
+    lea rdi, BUFFER
 
     mov rdx, rsp                ; get first variable`s address
-
-    lea rdi, BUFFER             ; get buffer`s address
 
     push r12                    ; save the ret address
 
@@ -125,26 +60,27 @@ Printf:
 
     push rbx                    ; put the ret address
 
+    mov rax, 1
+    mov rbx, 0
+
     ret
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
 ;                                                           SWITCH
-;Entry:     RSI - address in user`s data            This func switch between
-;           RDI - address in buffer             special symbols in user`s string
 ;           RDX - address of last var
 ;Retrn:    
-;Destr:     RBX
+;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14
 ;===============================================================================================
 
 Switch:
 
-    cmp byte [rsi], byte '%'
+    cmp byte [rsi], byte "%"
     jne .justLetter
 
     inc rsi
 
-    cmp byte [rsi], byte '%'
+    cmp byte [rsi], byte "%"
     je .justLetter
 
     xor rbx, rbx
@@ -159,12 +95,12 @@ Switch:
                             dq .binary
                             dq .char
                             dq .decimal
-    times ('h' - 'd' - 1)   dq .error
-                            dq .hexadecimal,
-    times ('o' - 'h' - 1)   dq .error
-                            dq .octal,
+    times ('o' - 'd' - 1)   dq .error
+                            dq .octal
     times ('s' - 'o' - 1)   dq .error
                             dq .string
+    times ('x' - 's' - 1)   dq .error
+                            dq .hexadecimal
 
 ;===========================================================JMP TABLE END=======================
 
@@ -218,7 +154,10 @@ Switch:
 
 .error:
 
-    ;;\td
+    mov rdi, ERROR_MSG
+    call OutputBuffer
+
+    jmp .funcRet
 
 .justLetter:
 
@@ -227,8 +166,6 @@ Switch:
     mov al, byte [rsi]
     stosb
     inc rsi
-
-    jmp .funcRet
 
 .funcRet:
 
@@ -247,43 +184,52 @@ Switch:
 ;           R12 - MASK                                 into buffer                              ;
 ;           R13 - SHIFT                                                                         ;
 ;Retrn:     none                                                                                ;
-;Destr:     RAX, RBX, RSI, RCX                                                                  ;
+;Destr:     RAX, RBX, RCX, RSI                                                                  ;
 ;===============================================================================================;
 
 ConverterSysMltplsTwo:
 
-    mov rax, [rdx]              ; put var in rax
+;-= Here the variabel is in RBX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+    mov rbx, [rdx]              ; put var in rbx
     sub rdx, MOV_TO_NEXT_VAR
 
-    push rsi                    ; save rsi
+;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+    push rsi                    ; save
+    push rdx
+
+    lea rsi, INTERMDT_BUF
+    xchg rsi, rdi               ; for stosw
+
+    lea rdx, ALPHABET           ; for shift
 
     xor rcx, rcx                ; reset to zero intermediate buffer counter
-
-    mov rsi, rdi                ; | > prepare for movsb & PutInBuf
-    lea rdi, INTERMDT_BUF       ; |/
-
-    lea rbx, ALPHABET           ; for shift
+    xchg rcx, r13               ; becouse we can`t shift (by shr) at r13
 
 .loop:
 
-    inc rcx
+    inc r13
 
-    mov rsi, rax
+    mov rax, rbx
 
-    and rsi, rcx
-    shr rax, cl
+    and rdx, r12                ; mask
+    shr rbx, cl                 ; shift
 
-    add rsi, rbx
+    add rax, rdx                ; offset in alphabet
 
-    movsb
+    stosb                       ; put alphabet`s char = rdx
 
-    cmp rax, 0
+    cmp rbx, 0
 
     jne .loop
 
+    xchg r13, rcx               ; was for shift
+    xchg rdi, rsi               ; was for stosw
+
     call PutInBuf
 
-    mov rdi, rsi
+    pop rdx
     pop rsi
 
     ret
@@ -298,29 +244,36 @@ ConverterSysMltplsTwo:
 ;===============================================================================================
 
 ConvertDecimal:
-    
+
+;-= Here the variabel is in RAX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
     mov rax, [rdx]
     sub rdx, MOV_TO_NEXT_VAR
 
-    push rdx
-
-    push rsi
-
-    xor rcx, rcx
-
-    mov rsi, rdi
-    lea rdi, INTERMDT_BUF
-
-    mov r14, 10
+;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
     cmp rax, 0
 
-    ja .loop
+    ja .positive
 
-    inc rcx
+    inc r15
 
     mov byte [rdi], byte '-'
+    inc rdi
+
     neg rax
+
+.positive:
+
+    push rdx                    ; save
+    push rsi
+
+    lea rsi, INTERMDT_BUF       ; rsi - intermediate buffer
+
+    xor rcx, rcx                ; xor counter of intermediate buffer chars
+    xor rdx, rdx                ; for div
+
+    mov r14, 10                 ; becouse we will div on it
 
 .loop:
 
@@ -331,7 +284,8 @@ ConvertDecimal:
     mov rbx, '0'
     add rbx, rdx
 
-    mov byte [rdi], dl
+    mov byte [rsi], bl
+    inc rsi
 
     cmp rax, 0
 
@@ -339,7 +293,6 @@ ConvertDecimal:
 
     call PutInBuf
 
-    mov rdi, rsi
     pop rsi
 
     pop rdx
@@ -363,14 +316,17 @@ ConvertDecimal:
 ;Destr:     RCX
 ;===============================================================================================
 
+;// why the rsi is 1 here?
+;// and why the rcx is 4199438
+
 PutInBuf:
 
-    push rdx
-    add rdx, rcx
+    push r15
+    add r15, rcx
 
-    cmp rdx, BUFFER_SIZE
+    cmp r15, BUFFER_SIZE
 
-    pop rdx
+    pop r15
 
     jb .loop
 
@@ -396,10 +352,12 @@ PutInBuf:
 
 Strlen:
 
-    mov rsi, [rdx]
+    xchg rsi, rdi               ; for scasb
 
     xor rcx, rcx
     dec rcx
+
+    xor rax, rax
 
     mov al, END_OF_STR
 
@@ -412,13 +370,14 @@ Strlen:
     jne .loop
 
     mov rax, rcx
+    xchg rsi, rdi               ; because of scasb
 
     ret
 
 ;===============================================================================================
 ;-----------------------------------------------------------------------------------------------
 ;                                                            PUT_STRING
-;Entry:     RSI - address of input strin            Put user`s string into buffer
+;Entry:                                            Put user`s string into buffer
 ;                      
 ;Retrn:
 ;Destr:
@@ -426,10 +385,14 @@ Strlen:
 
 PutString:
 
-    push rsi
+;-= Here the variabel is in RSI -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-    mov rdi, [rdx]
+    mov rsi, [rdx]
     sub rdx, MOV_TO_NEXT_VAR
+
+;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+    push rsi
 
     call Strlen
 
@@ -467,10 +430,52 @@ OutputBuffer:
 ;=-=-=-=-= Macro -=-=-=-=
 ;DESTR: RSI, RDI, RAX
 
-    printInCmd rdi
+    ;printInCmd rdi
 ;-=-=-=-=-=-=-=-=-=-=-=-=
+    push rdx
+    push rsi
+
+    mov rax, 1
+    lea rsi, BUFFER
+    mov rdi, 1
+    mov rdx, r15
+    syscall
+
+    pop rsi
+    pop rdx
 
     lea rdi, BUFFER
     mov r15, 0
 
     ret
+
+;-----------------------------------------------------------------------------------------------
+
+    section .data
+
+    BUFFER_SIZE      equ 128
+    BUFFER:          times BUFFER_SIZE db 0
+
+    INTERMDT_BUF_SZ  equ 64
+    INTERMDT_BUF:    times INTERMDT_BUF_SZ db 0
+
+    VARGS_B:         db  '%'
+    LEN_OF_ADDR_PTR  equ 8
+
+    HEX_MASK         equ 16
+    OCTAL_MASK       equ 8
+    BINARY_MASK      equ 1
+
+    ALPHABET:        db  '0123456789ABCDEF'
+    
+    HEX_SHIFT        equ 4
+    OCT_SHIFT        equ 3
+    BIN_SHIFT        equ 1
+
+    END_OF_STR       equ 0d
+
+    ERROR_MSG:       db 'You put wrong char after %, end of program...'
+
+    MOV_TO_NEXT_VAR  equ 8
+
+;-----------------------------------------------------------------------------------------------
