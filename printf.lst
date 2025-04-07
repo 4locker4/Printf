@@ -1,490 +1,514 @@
      1                                      global MyPrintf
      2                                  
      3                                  ;-----------------------------------------------------------------------------------------------
-     4                                      section .text
-     5                                  
-     6                                  ;=========================================================== MACROS ============================
-     7                                  
-     8                                  ;========================================================= START CODE ==========================
+     4                                  
+     5                                      section .data
+     6                                  
+     7                                      BUFFER_SIZE      equ 8
+     8 00000000 00<rep 8h>                  BUFFER:          times BUFFER_SIZE db 0
      9                                  
-    10                                  ;===============================================================================================
-    11                                  ;-----------------------------------------------------------------------------------------------
-    12                                  ;                                                           PRINTF
-    13                                  ;arg1       String with text
-    14                                  ;vargs      ...
-    15                                  ;
-    16                                  ;INFO:      RDX - reserved to variable`s address
-    17                                  ;           RCX - reserved to count quantity of chars into intermediate buffer
-    18                                  ;           RDI - reserved to buffer address
-    19                                  ;           RSI - reserved to input data
-    20                                  ;           R15 - reserved to char`s counter
-    21                                  ;           
-    22                                  ;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14, R15
-    23                                  ;===============================================================================================
-    24                                  
-    25                                  MyPrintf:
-    26                                  
-    27                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-    28 00000000 415C                        pop r12                     ; save ret address
-    29                                  
-    30 00000002 4151                        push r9
-    31 00000004 4150                        push r8
-    32 00000006 51                          push rcx
-    33 00000007 52                          push rdx
-    34 00000008 56                          push rsi
+    10                                      INTERMDT_BUF_SZ  equ 64
+    11 00000008 00<rep 40h>                 INTERMDT_BUF:    times INTERMDT_BUF_SZ db 0
+    12                                  
+    13 00000048 25                          VARGS_B:         db  '%'
+    14                                      LEN_OF_ADDR_PTR  equ 8
+    15                                  
+    16                                      HEX_MASK         equ 15
+    17                                      OCTAL_MASK       equ 7
+    18                                      BINARY_MASK      equ 1
+    19                                  
+    20 00000049 303132333435363738-         ALPHABET:        db  '0123456789ABCDEF'
+    20 00000052 39414243444546     
+    21                                      
+    22                                      HEX_SHIFT        equ 4
+    23                                      OCT_SHIFT        equ 3
+    24                                      BIN_SHIFT        equ 1
+    25                                  
+    26                                      END_OF_STR       equ 0d
+    27                                  
+    28                                      IS_NUM_NEG       equ 8000000h
+    29                                      NEG_MASK         equ 0FFFFFFFFh
+    30                                  
+    31 00000059 596F75207075742077-         ERROR_MSG:       db 'You put wrong char after %, end of program...'
+    31 00000062 726F6E672063686172-
+    31 0000006B 20616674657220252C-
+    31 00000074 20656E64206F662070-
+    31 0000007D 726F6772616D2E2E2E 
+    32                                      ERROR_MSG_SIZE   equ $ - ERROR_MSG
+    33                                  
+    34                                      MOV_TO_NEXT_VAR  equ 8
     35                                  
-    36 00000009 4889FE                      mov rsi, rdi
-    37 0000000C 488D3C25[00000000]          lea rdi, BUFFER
-    38                                  
-    39 00000014 4889E2                      mov rdx, rsp                ; get first variable`s address
+    36                                  ;-----------------------------------------------------------------------------------------------
+    37                                  
+    38                                  ;-----------------------------------------------------------------------------------------------
+    39                                      section .text
     40                                  
-    41 00000017 4154                        push r12                    ; save the ret address
+    41                                  ;// TD Replace Intermadiate buf -> stack
     42                                  
-    43 00000019 4D31FF                      xor r15, r15
+    43                                  ;=========================================================== MACROS ============================
     44                                  
-    45                                  .readInputData:
-    46                                          
-    47 0000001C E819000000                  call Switch
+    45                                  %macro PUT_CHAR_INTO_BUFFER 1
+    46                                  
+    47                                                  call CheckBuffer     
     48                                  
-    49 00000021 803E00                      cmp byte [rsi], byte END_OF_STR
-    50                                  
-    51 00000024 75F6                        jne .readInputData
-    52                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-    53                                  
-    54 00000026 E84D020000                  call OutputBuffer
-    55                                  
-    56 0000002B 5B                          pop rbx                     ; get the ret address
-    57                                   
-    58 0000002C 52                          push rdx                    ; we get the difference between the current stack address and 
-    59 0000002D 5C                          pop rsp                     ; the address when calling the function
-    60                                  
-    61 0000002E 53                          push rbx                    ; put the ret address
-    62                                  
-    63 0000002F B801000000                  mov rax, 1
-    64 00000034 BB00000000                  mov rbx, 0
-    65                                  
-    66 00000039 C3                          ret
-    67                                  
-    68                                  ;===============================================================================================
-    69                                  ;-----------------------------------------------------------------------------------------------
-    70                                  ;                                                           SWITCH
-    71                                  ;           RDX - address of last var
-    72                                  ;Retrn:    
-    73                                  ;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14
-    74                                  ;===============================================================================================
-    75                                  
-    76                                  Switch:
+    49                                                  mov al, %1
+    50                                                  stosb
+    51                                  
+    52                                                  inc r15                  
+    53                                  %endmacro
+    54                                  
+    55                                  ;========================================================= START CODE ==========================
+    56                                  
+    57                                  ;===============================================================================================
+    58                                  ;-----------------------------------------------------------------------------------------------
+    59                                  ;                                                           PRINTF
+    60                                  ;arg1       String with text
+    61                                  ;vargs      ...
+    62                                  ;
+    63                                  ;INFO:      RDX - reserved to variable`s address
+    64                                  ;           RCX - reserved to count quantity of chars into intermediate buffer
+    65                                  ;           RDI - reserved to buffer address
+    66                                  ;           RSI - reserved to input data
+    67                                  ;           R15 - reserved to char`s counter
+    68                                  ;           
+    69                                  ;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14, R15
+    70                                  ;===============================================================================================
+    71                                  
+    72                                  MyPrintf:
+    73                                  
+    74                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- Springboard -=-=-=-=-=-=-=-=-=-=
+    75 00000000 415C                        pop r12                         ; save ret address
+    76 00000002 4889E2                      mov rdx, rsp
     77                                  
-    78 0000003A 803E25                      cmp byte [rsi], byte "%"
-    79 0000003D 0F8534010000                jne .justLetter
-    80                                  
-    81 00000043 48FFC6                      inc rsi
-    82                                  
-    83 00000046 803E25                      cmp byte [rsi], byte "%"
-    84 00000049 0F8428010000                je .justLetter
-    85                                  
-    86 0000004F 4831DB                      xor rbx, rbx
-    87 00000052 8A1E                        mov bl, byte [rsi]
-    88                                  
-    89 00000054 4C8B24DD[4FFDFFFF]          mov r12, .jmpTable[(rbx - 'b') * 8]
-    90                                  
-    91 0000005C 41FFE4                      jmp r12
-    92                                  
-    93                                  ;===========================================================JMP TABLE START=====================
-    94                                  .jmpTable:
-    95 0000005F [1701000000000000]                                  dq .binary
-    96 00000067 [2A01000000000000]                                  dq .char
-    97 0000006F [3201000000000000]                                  dq .decimal
-    98 00000077 [6601000000000000]-         times ('o' - 'd' - 1)   dq .error
-    98 00000077 <rep Ah>           
-    99 000000C7 [4C01000000000000]                                  dq .octal
-   100 000000CF [6601000000000000]-         times ('s' - 'o' - 1)   dq .error
-   100 000000CF <rep 3h>           
-   101 000000E7 [5F01000000000000]                                  dq .string
-   102 000000EF [6601000000000000]-         times ('x' - 's' - 1)   dq .error
-   102 000000EF <rep 4h>           
-   103 0000010F [3901000000000000]                                  dq .hexadecimal
+    78 00000005 4151                        push r9
+    79 00000007 4150                        push r8
+    80 00000009 51                          push rcx
+    81 0000000A 52                          push rdx
+    82 0000000B 56                          push rsi
+    83                                  
+    84 0000000C 52                          push rdx
+    85 0000000D 4154                        push r12                        ; save the ret address
+    86                                  
+    87 0000000F 4889FE                      mov rsi, rdi
+    88 00000012 488D3C25[00000000]          lea rdi, BUFFER
+    89                                  
+    90 0000001A 4889E2                      mov rdx, rsp                    ; get first variable`s address
+    91 0000001D 4883C210                    add rdx, MOV_TO_NEXT_VAR * 2
+    92                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+    93                                  
+    94 00000021 4D31FF                      xor r15, r15
+    95                                  
+    96                                  .readInputData:
+    97                                          
+    98 00000024 E80E000000                  call Switch
+    99                                  
+   100 00000029 803E00                      cmp byte [rsi], byte END_OF_STR
+   101                                  
+   102 0000002C 75F6                        jne .readInputData
+   103                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
    104                                  
-   105                                  ;===========================================================JMP TABLE END=======================
+   105 0000002E E85E020000                  call OutputBuffer
    106                                  
-   107                                  .binary:
-   108                                  
-   109 00000117 41BC01000000                mov r12, BINARY_MASK
-   110 0000011D 41BD01000000                mov r13, BIN_SHIFT
-   111                                  
-   112 00000123 E859000000                  call ConverterSysMltplsTwo
-   113                                  
-   114 00000128 EB56                        jmp .funcRet
-   115                                  
-   116                                  .char:
-   117                                  
-   118 0000012A 49FFC7                      inc r15
-   119                                  
-   120 0000012D 8A02                        mov al, byte [rdx]
-   121 0000012F AA                          stosb
+   107 00000033 5B                          pop rbx                     ; get the ret address
+   108                                      
+   109 00000034 5C                          pop rsp                     ; the address when calling the function
+   110                                  
+   111 00000035 53                          push rbx                    ; put the ret address
+   112                                  
+   113 00000036 C3                          ret
+   114                                  
+   115                                  ;===============================================================================================
+   116                                  ;-----------------------------------------------------------------------------------------------
+   117                                  ;                                                           SWITCH
+   118                                  ;           RDX - address of last var                Switch to needed func
+   119                                  ;Retrn:    
+   120                                  ;Destr:     RAX, RBX, RCX, RDX, RDI, RSI, R12, R13, R14
+   121                                  ;===============================================================================================
    122                                  
-   123 00000130 EB4E                        jmp .funcRet
+   123                                  Switch:
    124                                  
-   125                                  .decimal:
-   126                                  
-   127 00000132 E890000000                  call ConvertDecimal
-   128                                  
-   129 00000137 EB47                        jmp .funcRet
-   130                                  
-   131                                  .hexadecimal:
+   125 00000037 803E25                      cmp byte [rsi], byte "%"
+   126 0000003A 0F8554010000                jne .justLetter
+   127                                  
+   128 00000040 48FFC6                      inc rsi
+   129                                  
+   130 00000043 803E25                      cmp byte [rsi], byte "%"
+   131 00000046 0F8448010000                je .justLetter
    132                                  
-   133 00000139 41BC10000000                mov r12, HEX_MASK
-   134 0000013F 41BD04000000                mov r13, HEX_SHIFT
+   133 0000004C 4831DB                      xor rbx, rbx
+   134 0000004F 8A1E                        mov bl, byte [rsi]
    135                                  
-   136 00000145 E837000000                  call ConverterSysMltplsTwo
+   136 00000051 48FFC6                      inc rsi
    137                                  
-   138 0000014A EB34                        jmp .funcRet
-   139                                  
-   140                                  .octal:
-   141                                      
-   142 0000014C 41BC08000000                mov r12, OCTAL_MASK
-   143 00000152 41BD03000000                mov r13, OCT_SHIFT
-   144                                  
-   145 00000158 E824000000                  call ConverterSysMltplsTwo
-   146                                  
-   147 0000015D EB21                        jmp .funcRet
-   148                                  
-   149                                  .string:
-   150                                  
-   151 0000015F E8ED000000                  call PutString
-   152                                  
-   153 00000164 EB1A                        jmp .funcRet
-   154                                  
-   155                                  .error:
-   156                                  
-   157 00000166 48BF-                       mov rdi, ERROR_MSG
-   157 00000168 [D100000000000000] 
-   158 00000170 E803010000                  call OutputBuffer
+   138 00000054 80FB62                      cmp bl, byte 'b'
+   139 00000057 0F8220010000                jb .error
+   140                                  
+   141 0000005D 80FB78                      cmp bl, byte 'x'
+   142 00000060 0F8717010000                ja .error
+   143                                  
+   144 00000066 FF24DD[5DFDFFFF]            jmp .jmpTable[(rbx - 'b') * 8]
+   145                                  
+   146                                  ;===========================================================JMP TABLE START=====================
+   147                                  .jmpTable:
+   148 0000006D [2501000000000000]                                  dq .binary
+   149 00000075 [3801000000000000]                                  dq .char
+   150 0000007D [4901000000000000]                                  dq .decimal
+   151 00000085 [7D01000000000000]-         times ('o' - 'd' - 1)   dq .error
+   151 00000085 <rep Ah>           
+   152 000000D5 [6301000000000000]                                  dq .octal
+   153 000000DD [7D01000000000000]-         times ('s' - 'o' - 1)   dq .error
+   153 000000DD <rep 3h>           
+   154 000000F5 [7601000000000000]                                  dq .string
+   155 000000FD [7D01000000000000]-         times ('x' - 's' - 1)   dq .error
+   155 000000FD <rep 4h>           
+   156 0000011D [5001000000000000]                                  dq .hexadecimal
+   157                                  
+   158                                  ;===========================================================JMP TABLE END=======================
    159                                  
-   160 00000175 EB09                        jmp .funcRet
+   160                                  .binary:
    161                                  
-   162                                  .justLetter:
-   163                                  
-   164 00000177 49FFC7                      inc r15
-   165                                  
-   166 0000017A 8A06                        mov al, byte [rsi]
-   167 0000017C AA                          stosb
-   168 0000017D 48FFC6                      inc rsi
-   169                                  
-   170                                  .funcRet:
-   171                                  
-   172 00000180 C3                          ret
-   173                                  
-   174                                  ;I*********************************************************************************************I
-   175                                  ;I                                       I             I                                       I
-   176                                  ;I======================================= CONVERTATIONS =======================================I
-   177                                  ;I                                       I             I                                       I
-   178                                  ;I*********************************************************************************************I
-   179                                  
-   180                                  ;===============================================================================================;
-   181                                  ;-----------------------------------------------------------------------------------------------;
-   182                                  ;                                                 CONVERTER_SYS_MLTPLS_TWO                      ;
-   183                                  ;Entry:     RDI - address in buffer             Put user`s multyples two num                    ;
-   184                                  ;           R12 - MASK                                 into buffer                              ;
-   185                                  ;           R13 - SHIFT                                                                         ;
-   186                                  ;Retrn:     none                                                                                ;
-   187                                  ;Destr:     RAX, RBX, RCX, RSI                                                                  ;
-   188                                  ;===============================================================================================;
+   162 00000125 41BC01000000                mov r12, BINARY_MASK
+   163 0000012B 41BD01000000                mov r13, BIN_SHIFT
+   164                                  
+   165 00000131 E879000000                  call ConverterSysMltplsTwo
+   166                                  
+   167 00000136 EB6A                        jmp .funcRet
+   168                                  
+   169                                  .char:
+   170                                  
+   171                                      PUT_CHAR_INTO_BUFFER byte [rdx]
+    46                              <1> 
+    47 00000138 E866000000          <1>  call CheckBuffer
+    48                              <1> 
+    49 0000013D 8A02                <1>  mov al, %1
+    50 0000013F AA                  <1>  stosb
+    51                              <1> 
+    52 00000140 49FFC7              <1>  inc r15
+   172                                  
+   173 00000143 4883C208                    add rdx, MOV_TO_NEXT_VAR
+   174                                  
+   175 00000147 EB59                        jmp .funcRet
+   176                                  
+   177                                  .decimal:
+   178                                  
+   179 00000149 E8AD000000                  call ConvertDecimal
+   180                                  
+   181 0000014E EB52                        jmp .funcRet
+   182                                  
+   183                                  .hexadecimal:
+   184                                  
+   185 00000150 41BC0F000000                mov r12, HEX_MASK
+   186 00000156 41BD04000000                mov r13, HEX_SHIFT
+   187                                  
+   188 0000015C E84E000000                  call ConverterSysMltplsTwo
    189                                  
-   190                                  ConverterSysMltplsTwo:
+   190 00000161 EB3F                        jmp .funcRet
    191                                  
-   192                                  ;-= Here the variabel is in RBX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-   193                                  
-   194 00000181 488B1A                      mov rbx, [rdx]              ; put var in rbx
-   195 00000184 4883EA08                    sub rdx, MOV_TO_NEXT_VAR
+   192                                  .octal:
+   193                                      
+   194 00000163 41BC07000000                mov r12, OCTAL_MASK
+   195 00000169 41BD03000000                mov r13, OCT_SHIFT
    196                                  
-   197                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   197 0000016F E83B000000                  call ConverterSysMltplsTwo
    198                                  
-   199 00000188 56                          push rsi                    ; save
-   200 00000189 52                          push rdx
-   201                                  
-   202 0000018A 488D3425[80000000]          lea rsi, INTERMDT_BUF
-   203 00000192 4887F7                      xchg rsi, rdi               ; for stosw
+   199 00000174 EB2C                        jmp .funcRet
+   200                                  
+   201                                  .string:
+   202                                  
+   203 00000176 E8F7000000                  call PutString
    204                                  
-   205 00000195 488D1425[C1000000]          lea rdx, ALPHABET           ; for shift
+   205 0000017B EB25                        jmp .funcRet
    206                                  
-   207 0000019D 4831C9                      xor rcx, rcx                ; reset to zero intermediate buffer counter
-   208 000001A0 4987CD                      xchg rcx, r13               ; becouse we can`t shift (by shr) at r13
-   209                                  
-   210                                  .loop:
-   211                                  
-   212 000001A3 49FFC5                      inc r13
-   213                                  
-   214 000001A6 4889D8                      mov rax, rbx
-   215                                  
-   216 000001A9 4C21E2                      and rdx, r12                ; mask
-   217 000001AC 48D3EB                      shr rbx, cl                 ; shift
+   207                                  .error:
+   208                                  
+   209 0000017D 48BF-                       mov rdi, ERROR_MSG
+   209 0000017F [5900000000000000] 
+   210 00000187 41BF2D000000                mov r15, ERROR_MSG_SIZE
+   211 0000018D E8FF000000                  call OutputBuffer
+   212                                  
+   213 00000192 EB0E                        jmp .funcRet
+   214                                  
+   215                                  .justLetter:
+   216                                  
+   217 00000194 E80A000000                  call CheckBuffer
    218                                  
-   219 000001AF 4801D0                      add rax, rdx                ; offset in alphabet
-   220                                  
-   221 000001B2 AA                          stosb                       ; put alphabet`s char = rdx
-   222                                  
-   223 000001B3 4883FB00                    cmp rbx, 0
+   219 00000199 8A06                        mov al, byte [rsi]
+   220 0000019B AA                          stosb
+   221                                  
+   222 0000019C 49FFC7                      inc r15
+   223 0000019F 48FFC6                      inc rsi
    224                                  
-   225 000001B7 75EA                        jne .loop
+   225                                  .funcRet:
    226                                  
-   227 000001B9 4C87E9                      xchg r13, rcx               ; was for shift
-   228 000001BC 4887FE                      xchg rdi, rsi               ; was for stosw
-   229                                  
-   230 000001BF E853000000                  call PutInBuf
-   231                                  
-   232 000001C4 5A                          pop rdx
-   233 000001C5 5E                          pop rsi
-   234                                  
-   235 000001C6 C3                          ret
-   236                                  
-   237                                  ;===============================================================================================
-   238                                  ;-----------------------------------------------------------------------------------------------
-   239                                  ;                                                           DECIMAL
-   240                                  ;Entry:     RAX - numbet                            Put user`s decimal num
-   241                                  ;           RDI - address in buffer                      into buffer
-   242                                  ;Retrn:
-   243                                  ;Destr:     
-   244                                  ;===============================================================================================
+   227 000001A2 C3                          ret
+   228                                  
+   229                                  ;===============================================================================================;
+   230                                  ;-----------------------------------------------------------------------------------------------;
+   231                                  ;                                                     CHECK_BUFFER                              ;
+   232                                  ;Entry:     RDI - address in buffer             Check if size of var more                       ;
+   233                                  ;           R15 - quantity of chars in buf            than buffer`s                             ;
+   234                                  ;Retrn:     none                                                                                ;
+   235                                  ;Destr:     none                                                                                ;
+   236                                  ;===============================================================================================;
+   237                                  
+   238                                  CheckBuffer:
+   239                                  
+   240 000001A3 4983FF07                    cmp r15, BUFFER_SIZE - 1
+   241                                  
+   242 000001A7 7205                        jb .BufIsOk
+   243                                  
+   244 000001A9 E8E3000000                  call OutputBuffer
    245                                  
-   246                                  ConvertDecimal:
+   246                                  .BufIsOk:
    247                                  
-   248                                  ;-= Here the variabel is in RAX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   248 000001AE C3                          ret
    249                                  
-   250 000001C7 488B02                      mov rax, [rdx]
-   251 000001CA 4883EA08                    sub rdx, MOV_TO_NEXT_VAR
-   252                                  
-   253                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-   254                                  
-   255 000001CE 4883F800                    cmp rax, 0
-   256                                  
-   257 000001D2 770C                        ja .positive
-   258                                  
-   259 000001D4 49FFC7                      inc r15
-   260                                  
-   261 000001D7 C6072D                      mov byte [rdi], byte '-'
-   262 000001DA 48FFC7                      inc rdi
-   263                                  
-   264 000001DD 48F7D8                      neg rax
+   250                                  ;I*********************************************************************************************I
+   251                                  ;I                                       I             I                                       I
+   252                                  ;I======================================= CONVERTATIONS =======================================I
+   253                                  ;I                                       I             I                                       I
+   254                                  ;I*********************************************************************************************I
+   255                                  
+   256                                  ;===============================================================================================;
+   257                                  ;-----------------------------------------------------------------------------------------------;
+   258                                  ;                                                 CONVERTER_SYS_MLTPLS_TWO                      ;
+   259                                  ;Entry:     RDI - address in buffer             Put user`s multyples two num                    ;
+   260                                  ;           R12 - MASK                                 into buffer                              ;
+   261                                  ;           R13 - SHIFT                                                                         ;
+   262                                  ;Retrn:     none                                                                                ;
+   263                                  ;Destr:     RAX, RBX, RCX, RSI                                                                  ;
+   264                                  ;===============================================================================================;
    265                                  
-   266                                  .positive:
+   266                                  ConverterSysMltplsTwo:
    267                                  
-   268 000001E0 52                          push rdx                    ; save
-   269 000001E1 56                          push rsi
-   270                                  
-   271 000001E2 488D3425[80000000]          lea rsi, INTERMDT_BUF       ; rsi - intermediate buffer
+   268                                  ;-= Here the variabel is in RBX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   269                                  
+   270 000001AF 488B1A                      mov rbx, [rdx]              ; put var in rbx
+   271 000001B2 4883C208                    add rdx, MOV_TO_NEXT_VAR
    272                                  
-   273 000001EA 4831C9                      xor rcx, rcx                ; xor counter of intermediate buffer chars
-   274 000001ED 4831D2                      xor rdx, rdx                ; for div
-   275                                  
-   276 000001F0 41BE0A000000                mov r14, 10                 ; becouse we will div on it
+   273                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   274                                  
+   275 000001B6 56                          push rsi                    ; save
+   276 000001B7 52                          push rdx
    277                                  
-   278                                  .loop:
-   279                                  
-   280 000001F6 48FFC1                      inc rcx
-   281                                  
-   282 000001F9 49F7F6                      div r14
-   283                                  
-   284 000001FC BB30000000                  mov rbx, '0'
-   285 00000201 4801D3                      add rbx, rdx
-   286                                  
-   287 00000204 881E                        mov byte [rsi], bl
-   288 00000206 48FFC6                      inc rsi
+   278 000001B8 488D3425[08000000]          lea rsi, INTERMDT_BUF
+   279 000001C0 4887F7                      xchg rsi, rdi               ; for stosb
+   280                                  
+   281 000001C3 488D1425[49000000]          lea rdx, ALPHABET           ; for shift
+   282                                  
+   283 000001CB 4831C9                      xor rcx, rcx                ; reset to zero intermediate buffer counter
+   284 000001CE 4987CD                      xchg rcx, r13               ; becouse we can`t shift (by shr) at r13
+   285                                  
+   286                                  .loop:
+   287                                  
+   288 000001D1 49FFC5                      inc r13
    289                                  
-   290 00000209 4883F800                    cmp rax, 0
+   290 000001D4 4889D8                      mov rax, rbx
    291                                  
-   292 0000020D 75E7                        jne .loop
-   293                                  
-   294 0000020F E803000000                  call PutInBuf
-   295                                  
-   296 00000214 5E                          pop rsi
+   292 000001D7 4C21E0                      and rax, r12                ; mask
+   293 000001DA 48D3EB                      shr rbx, cl                 ; shift
+   294                                  
+   295 000001DD 4801D0                      add rax, rdx                ; offset in alphabet
+   296 000001E0 488B00                      mov rax, [rax]
    297                                  
-   298 00000215 5A                          pop rdx
+   298 000001E3 AA                          stosb                       ; put alphabet`s char = rdx
    299                                  
-   300 00000216 C3                          ret
+   300 000001E4 4883FB00                    cmp rbx, 0
    301                                  
-   302                                  ;I*********************************************************************************************I
-   303                                  ;I                                      I              I                                       I
-   304                                  ;I=================================== END OF CONVERTATIONS ====================================I
-   305                                  ;I                                      I              I                                       I
-   306                                  ;I*********************************************************************************************I
-   307                                  
-   308                                  ;===============================================================================================
-   309                                  ;-----------------------------------------------------------------------------------------------
-   310                                  ;                                                            PUT_IN_BUF
-   311                                  ;Entry:     RDI - address of buffer                 Put user`s string into buffer
-   312                                  ;           RSI - address of last char in 
-   313                                  ;                 intermadiate buffer
-   314                                  ;           
-   315                                  ;Retrn:
-   316                                  ;Destr:     RCX
-   317                                  ;===============================================================================================
-   318                                  
-   319                                  ;// why the rsi is 1 here?
-   320                                  ;// and why the rcx is 4199438
-   321                                  
-   322                                  PutInBuf:
-   323                                  
-   324 00000217 4157                        push r15
-   325 00000219 4901CF                      add r15, rcx
-   326                                  
-   327 0000021C 4981FF80000000              cmp r15, BUFFER_SIZE
-   328                                  
-   329 00000223 415F                        pop r15
-   330                                  
-   331 00000225 7205                        jb .loop
+   302 000001E8 75E7                        jne .loop
+   303                                  
+   304 000001EA 48FFCF                      dec rdi
+   305                                  
+   306 000001ED 4C87E9                      xchg r13, rcx               ; was for shift
+   307 000001F0 4887FE                      xchg rdi, rsi               ; was for stosw
+   308                                  
+   309 000001F3 E859000000                  call PutInBuf
+   310                                  
+   311 000001F8 5A                          pop rdx
+   312 000001F9 5E                          pop rsi
+   313                                  
+   314 000001FA C3                          ret
+   315                                  
+   316                                  ;===============================================================================================
+   317                                  ;-----------------------------------------------------------------------------------------------
+   318                                  ;                                                           DECIMAL
+   319                                  ;Entry:     RAX - numbet                            Put user`s decimal num
+   320                                  ;           RDI - address in buffer                      into buffer
+   321                                  ;           
+   322                                  ;Retrn:
+   323                                  ;Destr:     RAX, RBX, RCX
+   324                                  ;===============================================================================================
+   325                                  
+   326                                  ConvertDecimal:
+   327                                  
+   328                                  ;-= Here the variabel is in RAX -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   329                                  
+   330 000001FB 488B02                      mov rax, [rdx]
+   331 000001FE 4883C208                    add rdx, MOV_TO_NEXT_VAR
    332                                  
-   333 00000227 E84C000000                  call OutputBuffer
+   333                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
    334                                  
-   335                                  .loop:
+   335 00000202 483D00000008                cmp rax, IS_NUM_NEG
    336                                  
-   337 0000022C A4                          movsb
-   338 0000022D 48FFCE                      dec rsi
-   339 00000230 48FFCE                      dec rsi
+   337 00000208 720D                        jb .positive
+   338                                  
+   339 0000020A 49FFC7                      inc r15
    340                                  
-   341 00000233 E2F7                        loop .loop
-   342                                  
-   343 00000235 C3                          ret
-   344                                  
-   345                                  ;===============================================================================================
-   346                                  ;-----------------------------------------------------------------------------------------------
-   347                                  ;                                                              STRLEN
-   348                                  ;Entry:     RDI - address of input string           Put user`s string into buffer
-   349                                  ;Retrn:     RAX - lenght of string
-   350                                  ;Destr:     RAX, RCX, RDI
-   351                                  ;===============================================================================================
-   352                                  
-   353                                  Strlen:
-   354                                  
-   355 00000236 4887F7                      xchg rsi, rdi               ; for scasb
-   356                                  
-   357 00000239 4831C9                      xor rcx, rcx
-   358 0000023C 48FFC9                      dec rcx
+   341 0000020D C6072D                      mov byte [rdi], byte '-'
+   342 00000210 48FFC7                      inc rdi
+   343                                  
+   344 00000213 F7D0                        not eax
+   345 00000215 FFC0                        inc eax
+   346                                  
+   347                                  .positive:
+   348                                  
+   349 00000217 52                          push rdx                    ; save
+   350 00000218 56                          push rsi
+   351                                  
+   352 00000219 488D3425[08000000]          lea rsi, INTERMDT_BUF       ; rsi - intermediate buffer
+   353                                  
+   354 00000221 4831C9                      xor rcx, rcx                ; xor counter of intermediate buffer chars
+   355                                  
+   356 00000224 41BE0A000000                mov r14, 10                 ; becouse we will div on it
+   357                                  
+   358                                  .loop:
    359                                  
-   360 0000023F 4831C0                      xor rax, rax
-   361                                  
-   362 00000242 B000                        mov al, END_OF_STR
-   363                                  
-   364                                  .loop:
-   365                                  
-   366 00000244 48FFC1                      inc rcx
+   360 0000022A 48FFC1                      inc rcx
+   361 0000022D 4831D2                      xor rdx, rdx                ; for div
+   362                                  
+   363 00000230 49F7F6                      div r14
+   364                                  
+   365 00000233 BB30000000                  mov rbx, '0'
+   366 00000238 4801D3                      add rbx, rdx
    367                                  
-   368 00000247 AE                          scasb
-   369                                  
-   370 00000248 75FA                        jne .loop
-   371                                  
-   372 0000024A 4889C8                      mov rax, rcx
-   373 0000024D 4887F7                      xchg rsi, rdi               ; because of scasb
+   368 0000023B 881E                        mov byte [rsi], bl
+   369 0000023D 48FFC6                      inc rsi
+   370                                  
+   371 00000240 4883F800                    cmp rax, 0
+   372                                  
+   373 00000244 75E4                        jne .loop
    374                                  
-   375 00000250 C3                          ret
+   375 00000246 48FFCE                      dec rsi
    376                                  
-   377                                  ;===============================================================================================
-   378                                  ;-----------------------------------------------------------------------------------------------
-   379                                  ;                                                            PUT_STRING
-   380                                  ;Entry:                                            Put user`s string into buffer
-   381                                  ;                      
-   382                                  ;Retrn:
-   383                                  ;Destr:
-   384                                  ;===============================================================================================
-   385                                  
-   386                                  PutString:
-   387                                  
-   388                                  ;-= Here the variabel is in RSI -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   377 00000249 E803000000                  call PutInBuf
+   378                                  
+   379 0000024E 5E                          pop rsi
+   380 0000024F 5A                          pop rdx
+   381                                  
+   382 00000250 C3                          ret
+   383                                  
+   384                                  ;I*********************************************************************************************I
+   385                                  ;I                                      I              I                                       I
+   386                                  ;I=================================== END OF CONVERTATIONS ====================================I
+   387                                  ;I                                      I              I                                       I
+   388                                  ;I*********************************************************************************************I
    389                                  
-   390 00000251 488B32                      mov rsi, [rdx]
-   391 00000254 4883EA08                    sub rdx, MOV_TO_NEXT_VAR
-   392                                  
-   393                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-   394                                  
-   395 00000258 56                          push rsi
-   396                                  
-   397 00000259 E8D8FFFFFF                  call Strlen
-   398                                  
-   399 0000025E 5E                          pop rsi
+   390                                  ;===============================================================================================
+   391                                  ;-----------------------------------------------------------------------------------------------
+   392                                  ;                                                            PUT_IN_BUF
+   393                                  ;Entry:     RDI - address of buffer                 Put user`s string into buffer
+   394                                  ;           RSI - address of last char in 
+   395                                  ;                 intermadiate buffer
+   396                                  ;           
+   397                                  ;Retrn:
+   398                                  ;Destr:     RCX
+   399                                  ;===============================================================================================
    400                                  
-   401 0000025F BB80000000                  mov rbx, BUFFER_SIZE
-   402 00000264 4C29FB                      sub rbx, r15
-   403                                  
-   404 00000267 4839D8                      cmp rax, rbx
-   405                                  
-   406 0000026A 7205                        jb .loop
-   407                                  
-   408 0000026C E807000000                  call OutputBuffer
-   409                                  
-   410                                  .loop:
-   411                                  
-   412 00000271 A4                          movsb
-   413                                  
-   414 00000272 803E00                      cmp byte [rsi], byte END_OF_STR
-   415                                  
-   416 00000275 75FA                        jne .loop
-   417                                  
-   418 00000277 C3                          ret
-   419                                  
-   420                                  ;===============================================================================================
-   421                                  ;-----------------------------------------------------------------------------------------------
-   422                                  ;                                                          OUTPUT_BUFFER
-   423                                  ;Entry:     RDI - address in buffer                 Put user`s string into buffer
-   424                                  ;Retrn:     RDI - buffer address
-   425                                  ;Destr:     RAX, RSI, RDI
-   426                                  ;===============================================================================================
+   401                                  PutInBuf:
+   402                                  
+   403 00000251 4901CF                      add r15, rcx
+   404                                  
+   405 00000254 4983FF08                    cmp r15, BUFFER_SIZE
+   406                                  
+   407 00000258 720B                        jb .loop
+   408                                  
+   409 0000025A 4929CF                      sub r15, rcx
+   410                                  
+   411 0000025D E82F000000                  call OutputBuffer
+   412                                  
+   413 00000262 4901CF                      add r15, rcx
+   414                                  
+   415                                  .loop:
+   416                                  
+   417 00000265 A4                          movsb
+   418                                      
+   419 00000266 48FFCE                      dec rsi 
+   420 00000269 48FFCE                      dec rsi
+   421                                  
+   422 0000026C E2F7                        loop .loop
+   423                                      
+   424 0000026E 48FFC6                      inc rsi
+   425                                  
+   426 00000271 C3                          ret
    427                                  
-   428                                  OutputBuffer:
-   429                                  
-   430                                  ;=-=-=-=-= Macro -=-=-=-=
-   431                                  ;DESTR: RSI, RDI, RAX
-   432                                  
-   433                                      ;printInCmd rdi
-   434                                  ;-=-=-=-=-=-=-=-=-=-=-=-=
-   435 00000278 52                          push rdx
-   436 00000279 56                          push rsi
-   437                                  
-   438 0000027A B801000000                  mov rax, 1
-   439 0000027F 488D3425[00000000]          lea rsi, BUFFER
-   440 00000287 BF01000000                  mov rdi, 1
-   441 0000028C 4C89FA                      mov rdx, r15
-   442 0000028F 0F05                        syscall
-   443                                  
-   444 00000291 5E                          pop rsi
-   445 00000292 5A                          pop rdx
-   446                                  
-   447 00000293 488D3C25[00000000]          lea rdi, BUFFER
-   448 0000029B 41BF00000000                mov r15, 0
+   428                                  ;===============================================================================================
+   429                                  ;-----------------------------------------------------------------------------------------------
+   430                                  ;                                                            PUT_STRING
+   431                                  ;Entry:     RDX - var`s address                      Put user`s string into buffer
+   432                                  ;                      
+   433                                  ;Retrn:     none
+   434                                  ;Destr:     RBX
+   435                                  ;===============================================================================================
+   436                                  
+   437                                  PutString:
+   438                                  
+   439 00000272 56                          push rsi                    ; to save user`s string
+   440                                  
+   441                                  ;-= Here the variabel is in RSI -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   442                                  
+   443 00000273 488B32                      mov rsi, [rdx]
+   444 00000276 4883C208                    add rdx, MOV_TO_NEXT_VAR
+   445                                  
+   446                                  ;-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+   447                                  
+   448                                  .loop:
    449                                  
-   450 000002A1 C3                          ret
+   450                                      PUT_CHAR_INTO_BUFFER byte [rsi]
+    46                              <1> 
+    47 0000027A E824FFFFFF          <1>  call CheckBuffer
+    48                              <1> 
+    49 0000027F 8A06                <1>  mov al, %1
+    50 00000281 AA                  <1>  stosb
+    51                              <1> 
+    52 00000282 49FFC7              <1>  inc r15
    451                                  
-   452                                  ;-----------------------------------------------------------------------------------------------
+   452 00000285 48FFC6                      inc rsi
    453                                  
-   454                                      section .data
-   455                                  
-   456                                      BUFFER_SIZE      equ 128
-   457 00000000 00<rep 80h>                 BUFFER:          times BUFFER_SIZE db 0
+   454 00000288 8A1E                        mov bl, byte [rsi]
+   455 0000028A 80FB00                      cmp bl, END_OF_STR
+   456                                  
+   457 0000028D 75EB                        jne .loop
    458                                  
-   459                                      INTERMDT_BUF_SZ  equ 64
-   460 00000080 00<rep 40h>                 INTERMDT_BUF:    times INTERMDT_BUF_SZ db 0
-   461                                  
-   462 000000C0 25                          VARGS_B:         db  '%'
-   463                                      LEN_OF_ADDR_PTR  equ 8
-   464                                  
-   465                                      HEX_MASK         equ 16
-   466                                      OCTAL_MASK       equ 8
-   467                                      BINARY_MASK      equ 1
-   468                                  
-   469 000000C1 303132333435363738-         ALPHABET:        db  '0123456789ABCDEF'
-   469 000000CA 39414243444546     
-   470                                      
-   471                                      HEX_SHIFT        equ 4
-   472                                      OCT_SHIFT        equ 3
-   473                                      BIN_SHIFT        equ 1
-   474                                  
-   475                                      END_OF_STR       equ 0d
+   459 0000028F 5E                          pop rsi
+   460                                  
+   461 00000290 C3                          ret
+   462                                  
+   463                                  ;===============================================================================================
+   464                                  ;-----------------------------------------------------------------------------------------------
+   465                                  ;                                                          OUTPUT_BUFFER
+   466                                  ;Entry:     RDI - address in buffer                 Put user`s string into buffer
+   467                                  ;Retrn:     RDI - buffer address
+   468                                  ;Destr:     RAX, RSI, RDI
+   469                                  ;===============================================================================================
+   470                                  
+   471                                  OutputBuffer:
+   472                                  
+   473 00000291 52                          push rdx
+   474 00000292 56                          push rsi
+   475 00000293 51                          push rcx
    476                                  
-   477 000000D1 596F75207075742077-         ERROR_MSG:       db 'You put wrong char after %, end of program...'
-   477 000000DA 726F6E672063686172-
-   477 000000E3 20616674657220252C-
-   477 000000EC 20656E64206F662070-
-   477 000000F5 726F6772616D2E2E2E 
+   477 00000294 488D3425[00000000]          lea rsi, BUFFER
    478                                  
-   479                                      MOV_TO_NEXT_VAR  equ 8
-   480                                  
-   481                                  ;-----------------------------------------------------------------------------------------------
+   479 0000029C B801000000                  mov rax, 1
+   480 000002A1 BF01000000                  mov rdi, 1
+   481 000002A6 4C89FA                      mov rdx, r15
+   482 000002A9 0F05                        syscall
+   483                                   
+   484 000002AB 488D3C25[00000000]          lea rdi, BUFFER
+   485 000002B3 41BF00000000                mov r15, 0
+   486                                  
+   487 000002B9 59                          pop rcx
+   488 000002BA 5E                          pop rsi
+   489 000002BB 5A                          pop rdx
+   490                                  
+   491 000002BC C3                          ret

@@ -6,7 +6,6 @@ result: main.cpp MyPrintf.o
 asm: My_Printf.asm
 	nasm -g -f elf64 -l printf.lst -o MyPrintf.o My_Printf.asm
 
-
 .PHONY: clean
 
 clean:
